@@ -1,10 +1,13 @@
-﻿# Godot
+# Godot
 .godot/
 *.import
 .import/
 export_presets.cfg
 export_*.cfg
 *.translation
+
+# 每项目本地配置（clone 后从 bridge-config.json.temp 复制）
+bridge-config.json
 
 # Temp / OS
 *.tmp

@@ -1,4 +1,4 @@
-﻿# SimpleMCPBridge_Godot — Godot MCP 桥接插件
+# SimpleMCPBridge_Godot — Godot MCP 桥接插件
 
 Godot 侧 MCP 桥接插件，对齐 [SimpleMcpServer](https://github.com/redcool/SimpleMCPServer) 的 wire protocol。
 **本仓库根目录即插件本体**（独立插件仓库）：clone 进任意 Godot 工程的 `addons/simple_mcp_bridge/` 即可使用，随仓库 git 提交/拉取升级，无需手动拷贝文件。
@@ -20,7 +20,27 @@ git clone https://github.com/redcool/SimpleMCPBridge_Godot.git addons/simple_mcp
 MCPBridge="*res://addons/simple_mcp_bridge/MCPBridge.gd"
 ```
 
-（可选）改 `addons/simple_mcp_bridge/bridge-config.json` 的 `serverIp/serverPort/projectName`。
+（可选）首次使用生成本地配置（`bridge-config.json` 已在仓库 .gitignore 中，各工程可安全保留私有值，`git pull` 不会覆盖）：
+
+```powershell
+# PowerShell
+Copy-Item addons\simple_mcp_bridge\bridge-config.json.temp addons\simple_mcp_bridge\bridge-config.json
+```
+```bash
+# bash
+cp addons/simple_mcp_bridge/bridge-config.json.temp addons/simple_mcp_bridge/bridge-config.json
+```
+
+字段说明（JSON 不支持注释，说明在此）：
+
+| 字段 | 说明 |
+|---|---|
+| `serverIp` / `serverPort` | SimpleMcpServer 监听地址，默认 `127.0.0.1:45678` |
+| `encryptionKey` | 与 server 的 config.json `encryptionKey` 对齐后开启 `#ENC#` AES-256-CBC 加密；留空 = 明文 |
+| `projectName` | 桥 ID 中段 `<engine>-<project>-<guid>`；**多工程共连同一服务器时用它区分路由**（如 `team` / `rpg`），配合 `bridge.list` 按前缀判别；留空则回退引擎项目名 |
+
+> 不复制配置文件也能跑：缺省时使用内置默认值（`projectName` 空 ⇒ 引擎项目名做 slug）。
+
 启动顺序：先启动 SimpleMcpServer，再启动游戏；桥自动重连（3s 间隔）。
 验证：服务端日志出现 `Registered N tool(s) from bridge`。
 
@@ -32,7 +52,7 @@ git -C addons/simple_mcp_bridge pull
 
 ## 目录结构
 
-- 根目录 = 插件本体：`MCPBridge.gd`（入口/autoload）、`ToolRegistry.gd`、`CryptoHelper.gd`、`bridge-config.json`、`Handlers/`（工具处理器）
+- 根目录 = 插件本体：`MCPBridge.gd`（入口/autoload）、`ToolRegistry.gd`、`CryptoHelper.gd`、`bridge-config.json.temp`（配置模板，见上）、`Handlers/`（工具处理器）；`bridge-config.json` 由各工程自行从模板复制、不入库
 - `examples/` = 可选冒烟演示（BridgeStatus 场景 + 脚本），不是插件运行必需
 
 ## 开发
