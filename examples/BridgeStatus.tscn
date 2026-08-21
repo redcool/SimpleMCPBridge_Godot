@@ -1,0 +1,6 @@
+﻿[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://examples/bridge_status.gd" id="1_status"]
+
+[node name="BridgeStatus" type="Node"]
+script = ExtResource("1_status")
