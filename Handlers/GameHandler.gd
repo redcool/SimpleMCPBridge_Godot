@@ -8,7 +8,9 @@ var tree: SceneTree
 var reg: RefCounted = null
 
 var _seq_next_id: int = 0
-var _sequences: Dictionary = {}   # seq_id -> {running, steps, current, done, last, error}
+var _sequences: Dictionary = {}   # seq_id -> {running, steps, current, done, last, error, finished_at}
+const MAX_SEQUENCE_ENTRIES := 100
+const SEQUENCE_TTL_SEC := 60.0
 
 
 func _init(t: SceneTree, registry: RefCounted = null) -> void:
@@ -149,7 +151,7 @@ func _get_state(_params: Dictionary) -> Variant:
 
 func _get_entities(params: Dictionary) -> Variant:
 	var group: String = str(params.get("group", "enemies"))
-	var max: int = int(params.get("max", 40))
+	var max: int = clampi(int(params.get("max", 40)), 1, 200)
 	var out: Array = []
 	for n in tree.get_nodes_in_group(group):
 		if out.size() >= max:
@@ -232,10 +234,31 @@ func _pause(params: Dictionary) -> Variant:
 
 # ================= 序列 =================
 
+## 清理已结束序列：TTL 过期清理 + 超上限时清最旧的已结束条目（防 _sequences 无限增长）
+func _prune_sequences() -> void:
+	var now: float = Time.get_unix_time_from_system()
+	var finished: Array = []
+	for sid in _sequences:
+		if not bool((_sequences[sid] as Dictionary).get("running", false)):
+			finished.append(sid)
+	var over: int = _sequences.size() - MAX_SEQUENCE_ENTRIES
+	if over > 0 and not finished.is_empty():
+		finished.sort_custom(func(a, b):
+			return float((_sequences[a] as Dictionary).get("finished_at", 0.0)) < float((_sequences[b] as Dictionary).get("finished_at", 0.0)))
+		for i in range(mini(over, finished.size())):
+			_sequences.erase(finished[i])
+	for sid in finished:
+		var st: Dictionary = _sequences[sid]
+		var fa: float = float(st.get("finished_at", 0.0))
+		if fa > 0.0 and now - fa > SEQUENCE_TTL_SEC:
+			_sequences.erase(sid)
+
+
 func _do_sequence(params: Dictionary) -> Variant:
 	var steps: Array = params.get("steps", [])
 	if steps.is_empty():
 		return {"error": "steps 为空"}
+	_prune_sequences()
 	_seq_next_id += 1
 	var seq_id: int = _seq_next_id
 	_sequences[seq_id] = {
@@ -255,6 +278,8 @@ func _run_steps(seq_id: int, steps: Array) -> void:
 	var index: int = 0
 	for step in steps:
 		if not bool(state.get("running", true)):  # cancelled
+			state["running"] = false
+			state["finished_at"] = Time.get_unix_time_from_system()
 			state["error"] = "cancelled"
 			return
 		state["current"] = index
@@ -263,6 +288,8 @@ func _run_steps(seq_id: int, steps: Array) -> void:
 		if delay > 0.0:
 			await tree.create_timer(delay).timeout
 		if not bool(state.get("running", true)):
+			state["running"] = false
+			state["finished_at"] = Time.get_unix_time_from_system()
 			state["error"] = "cancelled"
 			return
 		var tool: String = str(s.get("tool", ""))
@@ -277,6 +304,7 @@ func _run_steps(seq_id: int, steps: Array) -> void:
 		state["done"] = index + 1
 		index += 1
 	state["running"] = false
+	state["finished_at"] = Time.get_unix_time_from_system()
 
 
 func _sequence_status(params: Dictionary) -> Variant:
@@ -307,6 +335,7 @@ func _sequence_cancel(params: Dictionary) -> Variant:
 		var st: Dictionary = _sequences[sid]
 		if bool(st.get("running", false)):
 			st["running"] = false
+			st["finished_at"] = Time.get_unix_time_from_system()
 			st["error"] = "cancelled"
 			cancelled.append(sid)
 	return {"ok": true, "cancelled": cancelled}

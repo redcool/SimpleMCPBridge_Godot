@@ -127,5 +127,8 @@ func registration_message(bridge_id: String) -> String:
 func call_tool(method: String, params: Dictionary) -> Variant:
 	if not _routers.has(method):
 		return {"error": "unknown tool: %s（已注册 %d 个工具）" % [method, _routers.size()]}
+	# 执行路径同样受类别门控（tools.enable/disable 不只是裁剪列表）
+	if not _category_enabled(_category(method)):
+		return {"error": "工具类别已禁用: %s（可用 tools.enable 重新启用）" % _category(method)}
 	var cb: Callable = _routers[method] as Callable
 	return cb.call(params)

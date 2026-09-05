@@ -22,6 +22,7 @@ var peer: WebSocketPeer = null
 var _reconnect_in: float = 0.0
 var _cfg: Dictionary = {}
 var _enc_key: String = ""  # 非空则启用 #ENC# AES-256-CBC（对齐 server crypto.ts）
+var _block_reconnect: bool = false  # 配置错误（如加密不匹配）时停止自动重连，避免循环刷日志
 
 const RECONNECT_DELAY := 3.0
 
@@ -49,6 +50,8 @@ func _exit_tree() -> void:
 
 func _process(delta: float) -> void:
 	if peer == null:
+		if _block_reconnect:
+			return
 		if _reconnect_in > 0.0:
 			_reconnect_in -= delta
 			if _reconnect_in <= 0.0:
@@ -85,7 +88,10 @@ func _handle_typed(msg: Dictionary) -> void:
 		"server_info":
 			var enc: bool = bool(msg.get("encryption", false))
 			if enc and _enc_key.is_empty():
-				push_warning("[MCPBridge] 服务端要求加密但本桥 encryptionKey 为空，将无法解密服务端消息。")
+				push_warning("[MCPBridge] 服务端要求加密但本桥 encryptionKey 为空 — 断开并停止重连，请配置 bridge-config.json 的 encryptionKey")
+				_block_reconnect = true
+				if peer != null:
+					peer.close()
 			elif not enc and not _enc_key.is_empty():
 				push_warning("[MCPBridge] 本桥配置了加密密钥但服务端未开启加密，将以明文通信。")
 		"request_tools":
@@ -110,8 +116,13 @@ func _handle_call(msg: Dictionary) -> void:
 	var result: Variant = registry.call_tool(method, params)
 	if result is Dictionary and (result as Dictionary).has("error") and (result as Dictionary).size() == 1:
 		_send(JSON.stringify({"id": id, "error": str((result as Dictionary).get("error"))}))
-	else:
-		_send(JSON.stringify({"id": id, "result": result}))
+		return
+	# 回包护栏：超过 3.5MB 截断，防止服务器 ws maxPayload(4MB) 拒绝导致断连
+	var payload: String = JSON.stringify(result)
+	if payload.length() > 3500000:
+		payload = payload.substr(0, 3000000) + "...[响应过大已截断，请缩小查询范围]"
+		result = payload
+	_send(JSON.stringify({"id": id, "result": result}))
 
 
 func _send(text: String) -> void:

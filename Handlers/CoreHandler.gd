@@ -61,8 +61,8 @@ func _get_status(params: Dictionary) -> Variant:
 
 
 func _get_hierarchy(params: Dictionary) -> Variant:
-	var max_depth: int = int(params.get("max_depth", 8))
-	var max_nodes: int = int(params.get("max_nodes", 200))
+	var max_depth: int = clampi(int(params.get("max_depth", 8)), 0, 32)
+	var max_nodes: int = clampi(int(params.get("max_nodes", 200)), 1, 200)
 	var out: Array = []
 	_walk(tree.root, 0, max_depth, max_nodes, out)
 	return {"count": out.size(), "truncated": out.size() >= max_nodes, "nodes": out}

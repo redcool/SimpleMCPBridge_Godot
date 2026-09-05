@@ -24,6 +24,7 @@ static func decrypt(raw: String, key_text: String) -> String:
 	var b64: String = raw.substr(5).strip_edges()
 	var data: PackedByteArray = Marshalls.base64_to_raw(b64)
 	if data.size() <= 16:
+		push_warning("[MCPCrypto] 解密失败：密文过短（不足 IV 长度）")
 		return ""
 	var iv: PackedByteArray = data.slice(0, 16)
 	var ct: PackedByteArray = data.slice(16)
@@ -232,8 +233,22 @@ static func _decrypt_block(block: PackedByteArray, w: Array) -> PackedByteArray:
 	return _state_to_bytes(s)
 
 
-static func _cbc_encrypt(data: PackedByteArray, key: PackedByteArray, iv: PackedByteArray) -> PackedByteArray:
+static var _expanded_cache: Dictionary = {}  # key hex -> 展开后轮密钥（密钥极少变化，缓存免每次重算）
+
+
+static func _expand_key_cached(key: PackedByteArray) -> Array:
+	var khex: String = key.hex_encode()
+	if _expanded_cache.has(khex):
+		return _expanded_cache[khex]
 	var w: Array = _expand_key(key)
+	if _expanded_cache.size() > 16:
+		_expanded_cache.clear()
+	_expanded_cache[khex] = w
+	return w
+
+
+static func _cbc_encrypt(data: PackedByteArray, key: PackedByteArray, iv: PackedByteArray) -> PackedByteArray:
+	var w: Array = _expand_key_cached(key)
 	# PKCS7 补齐
 	var pad_len: int = 16 - (data.size() % 16)
 	var padded := PackedByteArray()
@@ -253,7 +268,7 @@ static func _cbc_encrypt(data: PackedByteArray, key: PackedByteArray, iv: Packed
 
 
 static func _cbc_decrypt(data: PackedByteArray, key: PackedByteArray, iv: PackedByteArray) -> PackedByteArray:
-	var w: Array = _expand_key(key)
+	var w: Array = _expand_key_cached(key)
 	var out := PackedByteArray()
 	var prev: PackedByteArray = iv
 	for off in range(0, data.size(), 16):
@@ -269,6 +284,7 @@ static func _cbc_decrypt(data: PackedByteArray, key: PackedByteArray, iv: Packed
 		return out
 	var pad_len: int = out[out.size() - 1]
 	if pad_len < 1 or pad_len > 16:
+		push_warning("[MCPCrypto] 解密失败：PKCS7 pad 非法（密钥不匹配或数据损坏？）")
 		return PackedByteArray()
 	var valid: bool = true
 	for i in range(pad_len):
@@ -276,5 +292,6 @@ static func _cbc_decrypt(data: PackedByteArray, key: PackedByteArray, iv: Packed
 			valid = false
 			break
 	if not valid:
+		push_warning("[MCPCrypto] 解密失败：PKCS7 校验不过（密钥不匹配或数据被篡改）")
 		return PackedByteArray()
 	return out.slice(0, out.size() - pad_len)

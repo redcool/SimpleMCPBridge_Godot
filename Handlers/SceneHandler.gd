@@ -109,8 +109,21 @@ func _call_method(params: Dictionary) -> Variant:
 	var n: Node = _resolve(path_str)
 	if n == null:
 		return {"error": "节点不存在: %s" % path_str}
+	if not n.has_method(method):
+		return {"error": "节点 %s 无白名单方法 %s（类型 %s）" % [str(n.get_path()), method, n.get_class()]}
 	var args: Array = params.get("args", [])
-	var result: Variant = n.callv(method, args)
+	# 只放行基础类型参数，防类型错误参数触发运行时错误导致该请求永久无响应
+	var clean: Array = []
+	for a in args:
+		if a is String or a is int or a is float or a is bool:
+			clean.append(a)
+		elif a is Array:
+			var sub: Array = []
+			for x in a:
+				if x is String or x is int or x is float or x is bool:
+					sub.append(x)
+			clean.append(sub)
+	var result: Variant = n.callv(method, clean)
 	return {"ok": true, "result": result}
 
 
@@ -123,6 +136,10 @@ func _convert_value(prop: String, value: Variant) -> Variant:
 			return Color(float(arr[0]), float(arr[1]), float(arr[2]), float(arr[3]))
 	if prop == "disabled" or prop == "visible":
 		return bool(value)
+	if prop == "text":
+		return str(value)
+	if prop in ["rotation", "rotation_degrees", "z_index"]:
+		return float(value)
 	return value
 
 
@@ -134,8 +151,6 @@ func _resolve(path_str: String) -> Node:
 
 
 func _prop(n: Node, name: String) -> Variant:
-	if "prop" == "":
-		return null
 	for p in n.get_property_list():
 		if str(p.get("name")) == name:
 			return n.get(name)
